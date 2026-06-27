@@ -6,7 +6,7 @@ import {
   type CashState, type Txn, type RecurringRule,
 } from "@/lib/engine";
 import {
-  loadRemote, saveRemote, signIn, signUp, signOut, getSession, onAuthChange,
+  loadRemote, saveRemote, signIn, signUp, signInWithGoogle, signOut, getSession, onAuthChange,
   isSuperAdmin, listOrgs, getMyOrgs, createOrg, seedOrgState, searchProfileByEmail,
   addMembership, listMembers, type OrgRow,
 } from "@/lib/supabase";
@@ -183,6 +183,12 @@ function Login() {
           {busy ? "…" : mode === "in" ? "התחברות" : "הרשמה"}
         </button>
         {msg && <div style={{ marginTop: 10, fontSize: 13, color: C.bad, textAlign: "center" }}>{msg}</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "14px 0", color: C.sub, fontSize: 12 }}>
+          <div style={{ flex: 1, height: 1, background: C.line }} /> או <div style={{ flex: 1, height: 1, background: C.line }} />
+        </div>
+        <button onClick={() => signInWithGoogle()} style={{ width: "100%", padding: "10px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", color: C.navy, fontWeight: 600, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <span style={{ fontWeight: 700, color: "#4285F4" }}>G</span> התחבר עם Google
+        </button>
         <div style={{ marginTop: 14, textAlign: "center", fontSize: 13, color: C.sub }}>
           {mode === "in" ? "אין חשבון? " : "יש חשבון? "}
           <button onClick={() => { setMode(mode === "in" ? "up" : "in"); setMsg(""); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13 }}>
