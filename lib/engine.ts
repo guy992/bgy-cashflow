@@ -48,6 +48,7 @@ export interface CashState {
   actuals: Record<string, number>;
   months: string[];
   agingRules?: AgingRules;
+  brand?: { name?: string; color?: string };
 }
 
 export interface DayRow {
