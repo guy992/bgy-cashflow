@@ -5,10 +5,15 @@ import {
   computeChain, runScenario, rollingForecast, aging, emptyState,
   type CashState, type Txn, type RecurringRule,
 } from "@/lib/engine";
-import { loadRemote, saveRemote, signIn, signUp, signOut, getSession, onAuthChange } from "@/lib/supabase";
+import {
+  loadRemote, saveRemote, signIn, signUp, signOut, getSession, onAuthChange,
+  isSuperAdmin, listOrgs, getMyOrgs, createOrg, seedOrgState, searchProfileByEmail,
+  addMembership, listMembers, type OrgRow,
+} from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
 
 const ILS = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
+const num = (v: string) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 
 function demoState(): CashState {
   const s = emptyState(876286, 200000, 0, ["2026-06", "2026-07", "2026-08", "2026-09"]);
@@ -35,8 +40,9 @@ const C = {
 const card: CSSProperties = { background: C.card, border: "1px solid " + C.line, borderRadius: 12, padding: 16 };
 const th: CSSProperties = { textAlign: "right", padding: "8px 10px", fontSize: 12, color: C.sub, borderBottom: "1px solid " + C.line, fontWeight: 600 };
 const td: CSSProperties = { textAlign: "right", padding: "8px 10px", fontSize: 13, borderBottom: "1px solid #f1f5f9" };
+const inpBase: CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box" };
 
-const TABS = [
+const BASE_TABS = [
   { id: "dash", label: "דשבורד" },
   { id: "entry", label: "הזנת תנועות" },
   { id: "recurring", label: "הוראות קבע" },
@@ -49,6 +55,9 @@ const TABS = [
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [isSuper, setIsSuper] = useState(false);
+  const [orgs, setOrgs] = useState<OrgRow[]>([]);
+  const [orgId, setOrgId] = useState("");
   const [state, setState] = useState<CashState>(demoState);
   const [tab, setTab] = useState("dash");
   const [loaded, setLoaded] = useState(false);
@@ -59,50 +68,89 @@ export default function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  const refreshOrgs = async () => {
+    const sup = await isSuperAdmin();
+    setIsSuper(sup);
+    const list = sup ? await listOrgs() : await getMyOrgs();
+    setOrgs(list);
+    setOrgId((prev) => prev && list.some((o) => o.id === prev) ? prev : (list.length ? list[0].id : ""));
+    return list;
+  };
+
   useEffect(() => {
-    if (!session) { setLoaded(false); return; }
-    (async () => {
-      try {
-        const remote = await loadRemote();
-        setState((remote as CashState) || demoState());
-      } catch { setState(demoState()); }
-      setLoaded(true);
-    })();
+    if (!session) { setOrgs([]); setOrgId(""); setIsSuper(false); setLoaded(false); return; }
+    refreshOrgs();
   }, [session]);
 
   useEffect(() => {
-    if (!loaded || !session) return;
-    const t = setTimeout(() => { saveRemote(state); }, 800);
+    if (!session || !orgId) { setLoaded(false); return; }
+    (async () => {
+      try {
+        const remote = await loadRemote(orgId);
+        if (remote) setState(remote as CashState);
+        else { const d = demoState(); setState(d); await saveRemote(orgId, d); }
+      } catch { setState(demoState()); }
+      setLoaded(true);
+    })();
+  }, [session, orgId]);
+
+  useEffect(() => {
+    if (!loaded || !session || !orgId) return;
+    const t = setTimeout(() => { saveRemote(orgId, state); }, 800);
     return () => clearTimeout(t);
-  }, [state, loaded, session]);
+  }, [state, loaded, session, orgId]);
 
   if (!authReady) return <div dir="rtl" style={{ padding: 60, textAlign: "center", color: C.sub }}>טוען…</div>;
   if (!session) return <Login />;
 
+  const tabs = isSuper ? [...BASE_TABS, { id: "console", label: "קונסולת BGY" }] : BASE_TABS;
+  const activeOrg = orgs.find((o) => o.id === orgId);
+  const noOrg = !orgId;
+  const showData = !!orgId && loaded;
+
   return (
     <div dir="rtl" style={{ minHeight: "100vh", background: C.bg, color: C.navy }}>
-      <header style={{ background: state.brand?.color || C.navy, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <header style={{ background: state.brand?.color || C.navy, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>{state.brand?.name || "מערכת ניהול תזרים מזומנים"}</div>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · {session.user.email}</div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · {session.user.email}{isSuper ? " · מנהל-על" : ""}</div>
         </div>
-        <button onClick={() => signOut()} style={{ background: "transparent", color: "#cbd5e1", border: "1px solid #334155", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>התנתק</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {orgs.length > 0 && (
+            <select value={orgId} onChange={(e) => setOrgId(e.target.value)} style={{ ...inpBase, background: "#1e293b", color: "#fff", border: "1px solid #334155" }}>
+              {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          )}
+          <button onClick={() => signOut()} style={{ background: "transparent", color: "#cbd5e1", border: "1px solid #334155", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>התנתק</button>
+        </div>
       </header>
       <nav style={{ display: "flex", gap: 4, padding: "12px 24px 0", flexWrap: "wrap", borderBottom: "1px solid " + C.line, background: "#fff" }}>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "8px 14px", border: "none", borderBottom: tab === t.id ? "2px solid " + C.accent : "2px solid transparent", background: "transparent", color: tab === t.id ? C.accent : C.sub, fontWeight: tab === t.id ? 700 : 500, cursor: "pointer", fontSize: 14 }}>{t.label}</button>
         ))}
       </nav>
       <main style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
-        {tab === "dash" && <Dashboard state={state} />}
-        {tab === "entry" && <Entry state={state} setState={setState} />}
-        {tab === "recurring" && <Recurring state={state} setState={setState} />}
-        {tab === "rolling" && <Rolling state={state} />}
-        {tab === "aging" && <Aging state={state} />}
-        {tab === "scenarios" && <Scenarios state={state} />}
-        {tab === "settings" && <Settings state={state} setState={setState} />}
+        {tab === "console" && isSuper && <Console orgs={orgs} orgId={orgId} setOrgId={setOrgId} refreshOrgs={refreshOrgs} />}
+        {tab !== "console" && noOrg && (
+          <div style={{ ...card, textAlign: "center", color: C.sub }}>
+            {isSuper ? "אין עדיין לקוחות. עבור לטאב \"קונסולת BGY\" ליצירת לקוח ראשון." : "החשבון שלך עדיין לא משויך ללקוח. פנה ל-BGY לשיוך."}
+          </div>
+        )}
+        {tab !== "console" && showData && (
+          <>
+            {tab === "dash" && <Dashboard state={state} />}
+            {tab === "entry" && <Entry state={state} setState={setState} />}
+            {tab === "recurring" && <Recurring state={state} setState={setState} />}
+            {tab === "rolling" && <Rolling state={state} />}
+            {tab === "aging" && <Aging state={state} />}
+            {tab === "scenarios" && <Scenarios state={state} />}
+            {tab === "settings" && <Settings state={state} setState={setState} />}
+          </>
+        )}
       </main>
-      <footer style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: 24 }}>נתונים מאובטחים בענן · בידוד מלא לכל לקוח · BGY</footer>
+      <footer style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: 24 }}>
+        {activeOrg ? "לקוח פעיל: " + activeOrg.name + " · " : ""}נתונים מאובטחים בענן · בידוד מלא לכל לקוח · BGY
+      </footer>
     </div>
   );
 }
@@ -145,6 +193,7 @@ function Login() {
     </div>
   );
 }
+
 function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={card}>
@@ -210,7 +259,7 @@ function Entry({ state, setState }: { state: CashState; setState: (s: CashState)
     setF({ ...f, category: "", amount: "" });
   };
   const del = (id: Txn["id"]) => setState({ ...state, transactions: state.transactions.filter((t) => t.id !== id) });
-  const inp: CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 };
+  const inp = inpBase;
   return (
     <>
       <h2 style={{ marginTop: 0, fontSize: 18 }}>הזנת תנועות</h2>
@@ -329,7 +378,7 @@ function Scenarios({ state }: { state: CashState }) {
     const delta: Txn[] = amt ? [{ id: "sc", date: ym + "-15", site: "מאוחד", dir: dir as Txn["dir"], category: "תרחיש", amount: amt, status: "אומדן" }] : [];
     return runScenario(state, delta)[ym];
   }, [state, ym, amount, dir]);
-  const inp: CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 };
+  const inp = inpBase;
   return (
     <>
       <h2 style={{ marginTop: 0, fontSize: 18 }}>תרחישים · מה-אם</h2>
@@ -386,13 +435,11 @@ function ListEdit({ label, items, onChange }: { label: string; items: string[]; 
 
 function Settings({ state, setState }: { state: CashState; setState: (s: CashState) => void }) {
   const brand = state.brand || {};
-  const num = (v: string) => { const n = Number(v); return isNaN(n) ? 0 : n; };
-  const inp: CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, width: "100%", boxSizing: "border-box" };
+  const inp: CSSProperties = { ...inpBase, width: "100%" };
   const lbl: CSSProperties = { fontSize: 12, color: C.sub, marginBottom: 4, display: "block" };
   return (
     <>
       <h2 style={{ marginTop: 0, fontSize: 18 }}>הגדרות ומיתוג</h2>
-
       <div style={card}>
         <div style={{ fontWeight: 600, marginBottom: 10 }}>מיתוג</div>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
@@ -406,7 +453,6 @@ function Settings({ state, setState }: { state: CashState; setState: (s: CashSta
           </div>
         </div>
       </div>
-
       <div style={{ ...card, marginTop: 12 }}>
         <div style={{ fontWeight: 600, marginBottom: 10 }}>פרמטרים פיננסיים</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
@@ -415,11 +461,116 @@ function Settings({ state, setState }: { state: CashState; setState: (s: CashSta
           <div><label style={lbl}>סף קריטי</label><input type="number" value={state.crit} onChange={(e) => setState({ ...state, crit: num(e.target.value) })} style={inp} /></div>
         </div>
       </div>
-
       <ListEdit label="אתרים" items={state.sites} onChange={(v) => setState({ ...state, sites: v })} />
       <ListEdit label="חודשים (YYYY-MM)" items={state.months} onChange={(v) => setState({ ...state, months: v })} />
       <ListEdit label="קטגוריות תקבול" items={state.catRec} onChange={(v) => setState({ ...state, catRec: v })} />
       <ListEdit label="קטגוריות תשלום" items={state.catPay} onChange={(v) => setState({ ...state, catPay: v })} />
+    </>
+  );
+}
+
+function Console({ orgs, orgId, setOrgId, refreshOrgs }: { orgs: OrgRow[]; orgId: string; setOrgId: (id: string) => void; refreshOrgs: () => Promise<OrgRow[]> }) {
+  const [name, setName] = useState("");
+  const [opening, setOpening] = useState("0");
+  const [warn, setWarn] = useState("0");
+  const [crit, setCrit] = useState("0");
+  const [bname, setBname] = useState("מערכת ניהול תזרים מזומנים");
+  const [bcolor, setBcolor] = useState("#0f172a");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("editor");
+  const [amsg, setAmsg] = useState("");
+  const [members, setMembers] = useState<{ user_id: string; role: string; email: string }[]>([]);
+
+  useEffect(() => { (async () => { setMembers(orgId ? await listMembers(orgId) : []); })(); }, [orgId]);
+
+  const create = async () => {
+    if (!name.trim()) { setMsg("נא להזין שם לקוח"); return; }
+    setBusy(true); setMsg("");
+    const id = await createOrg(name.trim());
+    if (!id) { setMsg("יצירה נכשלה — נדרשת הרשאת מנהל-על"); setBusy(false); return; }
+    const st = emptyState(num(opening), num(warn), num(crit));
+    st.brand = { name: bname, color: bcolor };
+    await seedOrgState(id, st);
+    await refreshOrgs();
+    setOrgId(id);
+    setMsg("הלקוח \"" + name.trim() + "\" נוצר ונבחר כפעיל ✓");
+    setName("");
+    setBusy(false);
+  };
+
+  const assign = async () => {
+    if (!orgId) { setAmsg("בחר לקוח פעיל קודם"); return; }
+    if (!email.trim()) { setAmsg("נא להזין אימייל"); return; }
+    const p = await searchProfileByEmail(email);
+    if (!p) { setAmsg("לא נמצא משתמש עם אימייל זה — שיירשם תחילה במסך ההתחברות"); return; }
+    const ok = await addMembership(orgId, p.id, role);
+    setAmsg(ok ? "שויך בהצלחה ✓" : "שיוך נכשל — ייתכן שכבר משויך");
+    if (ok) { setEmail(""); setMembers(await listMembers(orgId)); }
+  };
+
+  const inp: CSSProperties = { ...inpBase, width: "100%" };
+  const lbl: CSSProperties = { fontSize: 12, color: C.sub, marginBottom: 4, display: "block" };
+  const activeName = orgs.find((o) => o.id === orgId)?.name || "—";
+
+  return (
+    <>
+      <h2 style={{ marginTop: 0, fontSize: 18 }}>קונסולת BGY · ניהול לקוחות</h2>
+
+      <div style={card}>
+        <div style={{ fontWeight: 600, marginBottom: 10 }}>לקוח חדש</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          <div><label style={lbl}>שם הלקוח</label><input value={name} onChange={(e) => setName(e.target.value)} style={inp} placeholder="שם מלון / רשת" /></div>
+          <div><label style={lbl}>שם מערכת (מיתוג)</label><input value={bname} onChange={(e) => setBname(e.target.value)} style={inp} /></div>
+          <div><label style={lbl}>צבע ראשי</label><input type="color" value={bcolor} onChange={(e) => setBcolor(e.target.value)} style={{ ...inp, height: 38, padding: 4 }} /></div>
+          <div><label style={lbl}>יתרת פתיחה</label><input type="number" value={opening} onChange={(e) => setOpening(e.target.value)} style={inp} /></div>
+          <div><label style={lbl}>סף אזהרה</label><input type="number" value={warn} onChange={(e) => setWarn(e.target.value)} style={inp} /></div>
+          <div><label style={lbl}>סף קריטי</label><input type="number" value={crit} onChange={(e) => setCrit(e.target.value)} style={inp} /></div>
+        </div>
+        <button onClick={create} disabled={busy} style={{ ...inp, width: "auto", marginTop: 12, background: C.accent, color: "#fff", border: "none", cursor: "pointer", fontWeight: 600, padding: "8px 20px" }}>{busy ? "יוצר…" : "צור לקוח"}</button>
+        {msg && <div style={{ marginTop: 10, fontSize: 13, color: msg.includes("✓") ? C.good : C.bad }}>{msg}</div>}
+      </div>
+
+      <div style={{ ...card, marginTop: 12 }}>
+        <div style={{ fontWeight: 600, marginBottom: 10 }}>לקוחות ({orgs.length})</div>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><th style={th}>שם</th><th style={th}>סטטוס</th><th style={th}></th></tr></thead>
+          <tbody>
+            {orgs.map((o) => (
+              <tr key={o.id}>
+                <td style={td}>{o.name}</td>
+                <td style={td}>{o.id === orgId ? "פעיל" : ""}</td>
+                <td style={td}><button onClick={() => setOrgId(o.id)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer" }}>בחר</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ ...card, marginTop: 12 }}>
+        <div style={{ fontWeight: 600, marginBottom: 10 }}>שיוך משתמש ללקוח הפעיל: {activeName}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+          <div style={{ flex: 1, minWidth: 200 }}><label style={lbl}>אימייל המשתמש</label><input value={email} onChange={(e) => setEmail(e.target.value)} style={inp} placeholder="user@example.com" /></div>
+          <div><label style={lbl}>תפקיד</label>
+            <select value={role} onChange={(e) => setRole(e.target.value)} style={inp}>
+              <option value="owner">בעלים</option>
+              <option value="admin">מנהל</option>
+              <option value="editor">עורך</option>
+              <option value="viewer">צופה</option>
+            </select>
+          </div>
+          <button onClick={assign} style={{ ...inp, width: "auto", background: C.accent, color: "#fff", border: "none", cursor: "pointer", fontWeight: 600, padding: "8px 20px" }}>שייך</button>
+        </div>
+        {amsg && <div style={{ marginTop: 10, fontSize: 13, color: amsg.includes("✓") ? C.good : C.bad }}>{amsg}</div>}
+        {members.length > 0 && (
+          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+            <thead><tr><th style={th}>אימייל</th><th style={th}>תפקיד</th></tr></thead>
+            <tbody>{members.map((m) => <tr key={m.user_id}><td style={td}>{m.email}</td><td style={td}>{m.role}</td></tr>)}</tbody>
+          </table>
+        )}
+      </div>
     </>
   );
 }
