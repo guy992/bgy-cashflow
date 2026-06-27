@@ -5,6 +5,7 @@ import {
   computeChain, runScenario, rollingForecast, aging, emptyState,
   type CashState, type Txn, type RecurringRule,
 } from "@/lib/engine";
+import { loadRemote, saveRemote } from "@/lib/supabase";
 
 const ILS = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
 
@@ -25,7 +26,10 @@ function demoState(): CashState {
   return s;
 }
 
-const C = { bg: "#eef2f7", card: "#ffffff", line: "#e2e8f0", navy: "#0f172a", sub: "#64748b", good: "#059669", bad: "#dc2626", warn: "#d97706", accent: "#1d4ed8" };
+const C = {
+  bg: "#eef2f7", card: "#ffffff", line: "#e2e8f0", navy: "#0f172a",
+  sub: "#64748b", good: "#059669", bad: "#dc2626", warn: "#d97706", accent: "#1d4ed8",
+};
 const card: CSSProperties = { background: C.card, border: "1px solid " + C.line, borderRadius: 12, padding: 16 };
 const th: CSSProperties = { textAlign: "right", padding: "8px 10px", fontSize: 12, color: C.sub, borderBottom: "1px solid " + C.line, fontWeight: 600 };
 const td: CSSProperties = { textAlign: "right", padding: "8px 10px", fontSize: 13, borderBottom: "1px solid #f1f5f9" };
@@ -43,11 +47,25 @@ export default function App() {
   const [state, setState] = useState<CashState>(demoState);
   const [tab, setTab] = useState("dash");
   const [loaded, setLoaded] = useState(false);
+
   useEffect(() => {
-    try { const raw = localStorage.getItem("bgy_state"); if (raw) setState(JSON.parse(raw)); } catch {}
-    setLoaded(true);
+    (async () => {
+      try {
+        const remote = await loadRemote();
+        if (remote) setState(remote as CashState);
+        else { const raw = localStorage.getItem("bgy_state"); if (raw) setState(JSON.parse(raw)); }
+      } catch {
+        try { const raw = localStorage.getItem("bgy_state"); if (raw) setState(JSON.parse(raw)); } catch {}
+      }
+      setLoaded(true);
+    })();
   }, []);
-  useEffect(() => { if (loaded) try { localStorage.setItem("bgy_state", JSON.stringify(state)); } catch {} }, [state, loaded]);
+  useEffect(() => {
+    if (!loaded) return;
+    try { localStorage.setItem("bgy_state", JSON.stringify(state)); } catch {}
+    const t = setTimeout(() => { saveRemote(state); }, 800);
+    return () => clearTimeout(t);
+  }, [state, loaded]);
 
   return (
     <div dir="rtl" style={{ minHeight: "100vh", background: C.bg, color: C.navy }}>
@@ -72,7 +90,7 @@ export default function App() {
         {tab === "aging" && <Aging state={state} />}
         {tab === "scenarios" && <Scenarios state={state} />}
       </main>
-      <footer style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: 24 }}>מנוע מאומת · נתונים נשמרים מקומית (בהמשך: Supabase) · BGY</footer>
+      <footer style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: 24 }}>מנוע מאומת · נתונים נשמרים בענן (Supabase) · BGY</footer>
     </div>
   );
 }
