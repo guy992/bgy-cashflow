@@ -5,7 +5,8 @@ import {
   computeChain, runScenario, rollingForecast, aging, emptyState,
   type CashState, type Txn, type RecurringRule,
 } from "@/lib/engine";
-import { loadRemote, saveRemote } from "@/lib/supabase";
+import { loadRemote, saveRemote, signIn, signUp, signOut, getSession, onAuthChange } from "@/lib/supabase";
+import type { Session } from "@supabase/supabase-js";
 
 const ILS = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
 
@@ -44,38 +45,46 @@ const TABS = [
 ];
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [state, setState] = useState<CashState>(demoState);
   const [tab, setTab] = useState("dash");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    getSession().then((s) => { setSession(s); setAuthReady(true); });
+    const { data: sub } = onAuthChange((s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) { setLoaded(false); return; }
     (async () => {
       try {
         const remote = await loadRemote();
-        if (remote) setState(remote as CashState);
-        else { const raw = localStorage.getItem("bgy_state"); if (raw) setState(JSON.parse(raw)); }
-      } catch {
-        try { const raw = localStorage.getItem("bgy_state"); if (raw) setState(JSON.parse(raw)); } catch {}
-      }
+        setState((remote as CashState) || demoState());
+      } catch { setState(demoState()); }
       setLoaded(true);
     })();
-  }, []);
+  }, [session]);
+
   useEffect(() => {
-    if (!loaded) return;
-    try { localStorage.setItem("bgy_state", JSON.stringify(state)); } catch {}
+    if (!loaded || !session) return;
     const t = setTimeout(() => { saveRemote(state); }, 800);
     return () => clearTimeout(t);
-  }, [state, loaded]);
+  }, [state, loaded, session]);
+
+  if (!authReady) return <div dir="rtl" style={{ padding: 60, textAlign: "center", color: C.sub }}>טוען…</div>;
+  if (!session) return <Login />;
 
   return (
     <div dir="rtl" style={{ minHeight: "100vh", background: C.bg, color: C.navy }}>
       <header style={{ background: C.navy, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>מערכת ניהול תזרים מזומנים</div>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · White-label</div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · {session.user.email}</div>
         </div>
-        <button onClick={() => { if (confirm("לאפס לנתוני הדגמה?")) { localStorage.removeItem("bgy_state"); setState(demoState()); } }}
-          style={{ background: "transparent", color: "#cbd5e1", border: "1px solid #334155", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>איפוס דמו</button>
+        <button onClick={() => signOut()} style={{ background: "transparent", color: "#cbd5e1", border: "1px solid #334155", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>התנתק</button>
       </header>
       <nav style={{ display: "flex", gap: 4, padding: "12px 24px 0", flexWrap: "wrap", borderBottom: "1px solid " + C.line, background: "#fff" }}>
         {TABS.map((t) => (
@@ -90,7 +99,46 @@ export default function App() {
         {tab === "aging" && <Aging state={state} />}
         {tab === "scenarios" && <Scenarios state={state} />}
       </main>
-      <footer style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: 24 }}>מנוע מאומת · נתונים נשמרים בענן (Supabase) · BGY</footer>
+      <footer style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: 24 }}>נתונים מאובטחים בענן · בידוד מלא לכל לקוח · BGY</footer>
+    </div>
+  );
+}
+
+function Login() {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [mode, setMode] = useState<"in" | "up">("in");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!email || !pw) { setMsg("נא למלא אימייל וסיסמה"); return; }
+    setBusy(true); setMsg("");
+    const { error } = mode === "in" ? await signIn(email.trim(), pw) : await signUp(email.trim(), pw);
+    setBusy(false);
+    if (error) setMsg(error.message);
+    else if (mode === "up") setMsg("נרשמת בהצלחה — אפשר להתחבר.");
+  };
+  const inp: CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14, marginBottom: 10, boxSizing: "border-box" };
+  return (
+    <div dir="rtl" style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ ...card, width: 360 }}>
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: C.navy }}>מערכת תזרים מזומנים</div>
+          <div style={{ fontSize: 13, color: C.sub }}>BGY Consulting</div>
+        </div>
+        <input type="email" placeholder="אימייל" value={email} onChange={(e) => setEmail(e.target.value)} style={inp} />
+        <input type="password" placeholder="סיסמה" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={inp} />
+        <button onClick={submit} disabled={busy} style={{ width: "100%", padding: "10px", borderRadius: 8, border: "none", background: C.accent, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
+          {busy ? "…" : mode === "in" ? "התחברות" : "הרשמה"}
+        </button>
+        {msg && <div style={{ marginTop: 10, fontSize: 13, color: C.bad, textAlign: "center" }}>{msg}</div>}
+        <div style={{ marginTop: 14, textAlign: "center", fontSize: 13, color: C.sub }}>
+          {mode === "in" ? "אין חשבון? " : "יש חשבון? "}
+          <button onClick={() => { setMode(mode === "in" ? "up" : "in"); setMsg(""); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13 }}>
+            {mode === "in" ? "הרשמה" : "התחברות"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
