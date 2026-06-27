@@ -24,6 +24,7 @@ function demoState(): CashState {
     { id: 2, by: "מערכת", date: "2026-06-08", site: "נווה תמר", dir: "תשלום", category: "ספקים שוטף", amount: 90000, status: "מאומת" },
     { id: 3, by: "מערכת", date: "2026-06-20", site: "קאנטרי קלאב", dir: "תקבול", category: "מנויים", amount: 130000, status: "אומדן" },
   ];
+  s.brand = { name: "מערכת ניהול תזרים מזומנים", color: "#0f172a" };
   return s;
 }
 
@@ -42,6 +43,7 @@ const TABS = [
   { id: "rolling", label: "תחזית מתגלגלת" },
   { id: "aging", label: "גבייה / חייבים" },
   { id: "scenarios", label: "תרחישים" },
+  { id: "settings", label: "הגדרות" },
 ];
 
 export default function App() {
@@ -79,9 +81,9 @@ export default function App() {
 
   return (
     <div dir="rtl" style={{ minHeight: "100vh", background: C.bg, color: C.navy }}>
-      <header style={{ background: C.navy, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <header style={{ background: state.brand?.color || C.navy, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>מערכת ניהול תזרים מזומנים</div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>{state.brand?.name || "מערכת ניהול תזרים מזומנים"}</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · {session.user.email}</div>
         </div>
         <button onClick={() => signOut()} style={{ background: "transparent", color: "#cbd5e1", border: "1px solid #334155", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>התנתק</button>
@@ -98,6 +100,7 @@ export default function App() {
         {tab === "rolling" && <Rolling state={state} />}
         {tab === "aging" && <Aging state={state} />}
         {tab === "scenarios" && <Scenarios state={state} />}
+        {tab === "settings" && <Settings state={state} setState={setState} />}
       </main>
       <footer style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: 24 }}>נתונים מאובטחים בענן · בידוד מלא לכל לקוח · BGY</footer>
     </div>
@@ -142,9 +145,13 @@ function Login() {
     </div>
   );
 }
-
 function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (<div style={card}><div style={{ fontSize: 12, color: C.sub }}>{label}</div><div style={{ fontSize: 20, fontWeight: 700, color: color || C.navy, marginTop: 4 }}>{value}</div></div>);
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 12, color: C.sub }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: color || C.navy, marginTop: 4 }}>{value}</div>
+    </div>
+  );
 }
 
 function Dashboard({ state }: { state: CashState }) {
@@ -155,7 +162,9 @@ function Dashboard({ state }: { state: CashState }) {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 18 }}>דשבורד · {ym}</h2>
-        <select value={ym} onChange={(e) => setYm(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #cbd5e1" }}>{state.months.map((mm) => <option key={mm} value={mm}>{mm}</option>)}</select>
+        <select value={ym} onChange={(e) => setYm(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #cbd5e1" }}>
+          {state.months.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
+        </select>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
         <Kpi label="יתרת פתיחה" value={ILS(m.opening)} />
@@ -163,7 +172,11 @@ function Dashboard({ state }: { state: CashState }) {
         <Kpi label="שפל נזילות" value={ILS(m.trough)} color={m.trough < state.crit ? C.bad : m.trough < state.warn ? C.warn : C.good} />
         <Kpi label="ימי אוברדרפט" value={String(m.od)} color={m.od > 0 ? C.bad : C.good} />
       </div>
-      {m.alert !== "ok" && (<div style={{ marginTop: 12, padding: 12, borderRadius: 8, fontWeight: 600, background: m.alert === "crit" ? "#fef2f2" : "#fffbeb", color: m.alert === "crit" ? "#b91c1c" : "#b45309" }}>{m.alert === "crit" ? "קריטי" : "אזהרה"} — שפל צפוי {ILS(m.trough)} · שלמות הזנה {m.completeness}%</div>)}
+      {m.alert !== "ok" && (
+        <div style={{ marginTop: 12, padding: 12, borderRadius: 8, fontWeight: 600, background: m.alert === "crit" ? "#fef2f2" : "#fffbeb", color: m.alert === "crit" ? "#b91c1c" : "#b45309" }}>
+          {m.alert === "crit" ? "קריטי" : "אזהרה"} — שפל צפוי {ILS(m.trough)} · שלמות הזנה {m.completeness}%
+        </div>
+      )}
       <div style={{ ...card, marginTop: 16 }}>
         <h3 style={{ marginTop: 0, fontSize: 14 }}>מסלול יומי</h3>
         <div style={{ maxHeight: 360, overflow: "auto" }}>
@@ -171,7 +184,13 @@ function Dashboard({ state }: { state: CashState }) {
             <thead><tr><th style={th}>תאריך</th><th style={th}>תקבולים</th><th style={th}>תשלומים</th><th style={th}>נטו</th><th style={th}>יתרה</th></tr></thead>
             <tbody>
               {m.days.filter((d) => d.rec || d.pay).map((d) => (
-                <tr key={d.date}><td style={td}>{d.date}</td><td style={{ ...td, color: C.good }}>{d.rec ? ILS(d.rec) : "—"}</td><td style={{ ...td, color: C.bad }}>{d.pay ? ILS(d.pay) : "—"}</td><td style={td}>{ILS(d.net)}</td><td style={{ ...td, fontWeight: 600, color: d.proj < 0 ? C.bad : C.navy }}>{ILS(d.proj)}</td></tr>
+                <tr key={d.date}>
+                  <td style={td}>{d.date}</td>
+                  <td style={{ ...td, color: C.good }}>{d.rec ? ILS(d.rec) : "—"}</td>
+                  <td style={{ ...td, color: C.bad }}>{d.pay ? ILS(d.pay) : "—"}</td>
+                  <td style={td}>{ILS(d.net)}</td>
+                  <td style={{ ...td, fontWeight: 600, color: d.proj < 0 ? C.bad : C.navy }}>{ILS(d.proj)}</td>
+                </tr>
               ))}
             </tbody>
           </table>
@@ -208,7 +227,12 @@ function Entry({ state, setState }: { state: CashState; setState: (s: CashState)
           <thead><tr><th style={th}>תאריך</th><th style={th}>אתר</th><th style={th}>כיוון</th><th style={th}>קטגוריה</th><th style={th}>סכום</th><th style={th}>סטטוס</th><th style={th}></th></tr></thead>
           <tbody>
             {[...state.transactions].sort((a, b) => (a.date < b.date ? 1 : -1)).map((t) => (
-              <tr key={t.id}><td style={td}>{t.date}</td><td style={td}>{t.site}</td><td style={{ ...td, color: t.dir === "תקבול" ? C.good : C.bad }}>{t.dir}</td><td style={td}>{t.category}</td><td style={td}>{ILS(t.amount)}</td><td style={td}>{t.status}</td><td style={td}><button onClick={() => del(t.id)} style={{ color: C.bad, background: "none", border: "none", cursor: "pointer" }}>מחק</button></td></tr>
+              <tr key={t.id}>
+                <td style={td}>{t.date}</td><td style={td}>{t.site}</td>
+                <td style={{ ...td, color: t.dir === "תקבול" ? C.good : C.bad }}>{t.dir}</td>
+                <td style={td}>{t.category}</td><td style={td}>{ILS(t.amount)}</td><td style={td}>{t.status}</td>
+                <td style={td}><button onClick={() => del(t.id)} style={{ color: C.bad, background: "none", border: "none", cursor: "pointer" }}>מחק</button></td>
+              </tr>
             ))}
           </tbody>
         </table>
@@ -227,7 +251,12 @@ function Recurring({ state, setState }: { state: CashState; setState: (s: CashSt
           <thead><tr><th style={th}>יום</th><th style={th}>אתר</th><th style={th}>כיוון</th><th style={th}>קטגוריה</th><th style={th}>סכום</th><th style={th}>סטטוס</th><th style={th}>פעיל</th></tr></thead>
           <tbody>
             {state.recurring.map((r) => (
-              <tr key={r.id} style={{ opacity: r.active ? 1 : 0.4 }}><td style={td}>{r.day}</td><td style={td}>{r.site}</td><td style={{ ...td, color: r.dir === "תקבול" ? C.good : C.bad }}>{r.dir}</td><td style={td}>{r.category}</td><td style={td}>{ILS(r.amount)}</td><td style={td}>{r.status}</td><td style={td}><input type="checkbox" checked={r.active} onChange={() => toggle(r.id)} /></td></tr>
+              <tr key={r.id} style={{ opacity: r.active ? 1 : 0.4 }}>
+                <td style={td}>{r.day}</td><td style={td}>{r.site}</td>
+                <td style={{ ...td, color: r.dir === "תקבול" ? C.good : C.bad }}>{r.dir}</td>
+                <td style={td}>{r.category}</td><td style={td}>{ILS(r.amount)}</td><td style={td}>{r.status}</td>
+                <td style={td}><input type="checkbox" checked={r.active} onChange={() => toggle(r.id)} /></td>
+              </tr>
             ))}
           </tbody>
         </table>
@@ -251,7 +280,14 @@ function Rolling({ state }: { state: CashState }) {
           <thead><tr><th style={th}>שבוע</th><th style={th}>תקבולים</th><th style={th}>תשלומים</th><th style={th}>נטו</th><th style={th}>יתרת סגירה</th><th style={th}>התראה</th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i}><td style={td}>{r.start}</td><td style={{ ...td, color: C.good }}>{r.rec ? ILS(r.rec) : "—"}</td><td style={{ ...td, color: C.bad }}>{r.pay ? ILS(r.pay) : "—"}</td><td style={td}>{ILS(r.net)}</td><td style={{ ...td, fontWeight: 600, color: r.close < 0 ? C.bad : C.navy }}>{ILS(r.close)}</td><td style={td}>{r.alert === "crit" ? "🔴" : r.alert === "warn" ? "🟡" : "🟢"}</td></tr>
+              <tr key={i}>
+                <td style={td}>{r.start}</td>
+                <td style={{ ...td, color: C.good }}>{r.rec ? ILS(r.rec) : "—"}</td>
+                <td style={{ ...td, color: C.bad }}>{r.pay ? ILS(r.pay) : "—"}</td>
+                <td style={td}>{ILS(r.net)}</td>
+                <td style={{ ...td, fontWeight: 600, color: r.close < 0 ? C.bad : C.navy }}>{ILS(r.close)}</td>
+                <td style={td}>{r.alert === "crit" ? "🔴" : r.alert === "warn" ? "🟡" : "🟢"}</td>
+              </tr>
             ))}
           </tbody>
         </table>
@@ -272,7 +308,11 @@ function Aging({ state }: { state: CashState }) {
       <div style={card}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead><tr><th style={th}>טווח</th><th style={th}>ברוטו</th><th style={th}>צפי גבייה</th></tr></thead>
-          <tbody>{a.buckets.map((b) => (<tr key={b.label}><td style={td}>{b.label}</td><td style={td}>{ILS(b.gross)}</td><td style={{ ...td, color: C.good }}>{ILS(b.expected)}</td></tr>))}</tbody>
+          <tbody>
+            {a.buckets.map((b) => (
+              <tr key={b.label}><td style={td}>{b.label}</td><td style={td}>{ILS(b.gross)}</td><td style={{ ...td, color: C.good }}>{ILS(b.expected)}</td></tr>
+            ))}
+          </tbody>
         </table>
       </div>
     </>
@@ -313,5 +353,73 @@ function Cmp({ label, b, s, count }: { label: string; b: number; s: number; coun
   const diff = s - b;
   const better = count ? diff < 0 : diff > 0;
   const color = diff === 0 ? "#334155" : better ? C.good : C.bad;
-  return (<div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 12, color: C.sub }}>{label}</div><div style={{ fontSize: 12, color: "#94a3b8", textDecoration: "line-through" }}>{f(b)}</div><div style={{ fontSize: 20, fontWeight: 700, color }}>{f(s)}</div></div>);
+  return (
+    <div style={{ ...card, textAlign: "center" }}>
+      <div style={{ fontSize: 12, color: C.sub }}>{label}</div>
+      <div style={{ fontSize: 12, color: "#94a3b8", textDecoration: "line-through" }}>{f(b)}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color }}>{f(s)}</div>
+    </div>
+  );
+}
+
+function ListEdit({ label, items, onChange }: { label: string; items: string[]; onChange: (v: string[]) => void }) {
+  const [v, setV] = useState("");
+  const inp: CSSProperties = { padding: "6px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 };
+  return (
+    <div style={{ ...card, marginTop: 12 }}>
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>{label}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        {items.map((it, i) => (
+          <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#f1f5f9", borderRadius: 999, padding: "4px 10px", fontSize: 13 }}>
+            {it}
+            <button onClick={() => onChange(items.filter((_, j) => j !== i))} style={{ border: "none", background: "none", color: C.bad, cursor: "pointer", fontSize: 14 }}>×</button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input value={v} onChange={(e) => setV(e.target.value)} placeholder={"הוסף " + label} style={{ ...inp, flex: 1 }} />
+        <button onClick={() => { if (v.trim()) { onChange([...items, v.trim()]); setV(""); } }} style={{ ...inp, background: C.accent, color: "#fff", border: "none", cursor: "pointer" }}>הוסף</button>
+      </div>
+    </div>
+  );
+}
+
+function Settings({ state, setState }: { state: CashState; setState: (s: CashState) => void }) {
+  const brand = state.brand || {};
+  const num = (v: string) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+  const inp: CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, width: "100%", boxSizing: "border-box" };
+  const lbl: CSSProperties = { fontSize: 12, color: C.sub, marginBottom: 4, display: "block" };
+  return (
+    <>
+      <h2 style={{ marginTop: 0, fontSize: 18 }}>הגדרות ומיתוג</h2>
+
+      <div style={card}>
+        <div style={{ fontWeight: 600, marginBottom: 10 }}>מיתוג</div>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+          <div>
+            <label style={lbl}>שם המערכת</label>
+            <input value={brand.name || ""} onChange={(e) => setState({ ...state, brand: { ...brand, name: e.target.value } })} style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>צבע ראשי</label>
+            <input type="color" value={brand.color || "#0f172a"} onChange={(e) => setState({ ...state, brand: { ...brand, color: e.target.value } })} style={{ ...inp, height: 38, padding: 4 }} />
+          </div>
+        </div>
+      </div>
+
+      <div style={{ ...card, marginTop: 12 }}>
+        <div style={{ fontWeight: 600, marginBottom: 10 }}>פרמטרים פיננסיים</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          <div><label style={lbl}>יתרת פתיחה</label><input type="number" value={state.opening} onChange={(e) => setState({ ...state, opening: num(e.target.value) })} style={inp} /></div>
+          <div><label style={lbl}>סף אזהרה</label><input type="number" value={state.warn} onChange={(e) => setState({ ...state, warn: num(e.target.value) })} style={inp} /></div>
+          <div><label style={lbl}>סף קריטי</label><input type="number" value={state.crit} onChange={(e) => setState({ ...state, crit: num(e.target.value) })} style={inp} /></div>
+        </div>
+      </div>
+
+      <ListEdit label="אתרים" items={state.sites} onChange={(v) => setState({ ...state, sites: v })} />
+      <ListEdit label="חודשים (YYYY-MM)" items={state.months} onChange={(v) => setState({ ...state, months: v })} />
+      <ListEdit label="קטגוריות תקבול" items={state.catRec} onChange={(v) => setState({ ...state, catRec: v })} />
+      <ListEdit label="קטגוריות תשלום" items={state.catPay} onChange={(v) => setState({ ...state, catPay: v })} />
+    </>
+  );
 }
