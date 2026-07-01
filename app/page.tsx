@@ -13,6 +13,7 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import { BalanceLine, MonthlyBars, Legend } from "@/lib/charts";
 import { ConsentBanner, AppFooter, HelpGuide, LegalLinks } from "@/lib/help";
+import { BGY_LOGO } from "@/lib/brand";
 
 const ILS = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
 const num = (v: string) => { const n = Number(v); return isNaN(n) ? 0 : n; };
@@ -126,9 +127,13 @@ export default function App() {
     <div dir="rtl" style={{ minHeight: "100vh", background: C.bg, color: C.navy }}>
       <style>{"@media (max-width:640px){[style*='grid-template-columns']{grid-template-columns:1fr !important}main{padding:14px !important}header{padding:12px 14px !important}table{font-size:11px}nav button{font-size:13px !important;padding:7px 10px !important}}"}</style>
       <header style={{ background: state.brand?.color || C.navy, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>{state.brand?.name || "מערכת ניהול תזרים מזומנים"}</div>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · {isDemo ? "מצב הדגמה" : session?.user.email}{isSuper ? " · מנהל-על" : ""}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <img src={BGY_LOGO} alt="BGY" style={{ height: 38, width: "auto", background: "#fff", borderRadius: 8, padding: 3 }} />
+          {state.brand?.logo && <img src={state.brand.logo} alt="" style={{ height: 38, width: "auto", background: "#fff", borderRadius: 8, padding: 3 }} />}
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{state.brand?.name || "מערכת ניהול תזרים מזומנים"}</div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · {isDemo ? "מצב הדגמה" : session?.user.email}{isSuper ? " · מנהל-על" : ""}</div>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {orgs.length > 0 && (
@@ -194,6 +199,7 @@ function Login() {
     <div dir="rtl" style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ ...card, width: 360 }}>
         <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <img src={BGY_LOGO} alt="BGY" style={{ height: 72, width: "auto", marginBottom: 8 }} />
           <div style={{ fontSize: 20, fontWeight: 700, color: C.navy }}>מערכת תזרים מזומנים</div>
           <div style={{ fontSize: 13, color: C.sub }}>BGY Consulting</div>
         </div>
@@ -559,6 +565,8 @@ function Console({ orgs, orgId, setOrgId, refreshOrgs }: { orgs: OrgRow[]; orgId
   const [crit, setCrit] = useState("0");
   const [bname, setBname] = useState("מערכת ניהול תזרים מזומנים");
   const [bcolor, setBcolor] = useState("#0f172a");
+  const [blogo, setBlogo] = useState("");
+  const onLogoPick = (e: any) => { const file = e.target.files && e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { const img = new Image(); img.onload = () => { const mx = 128; const sc = Math.min(1, mx / Math.max(img.width, img.height)); const w = Math.round(img.width * sc); const h = Math.round(img.height * sc); const cv = document.createElement("canvas"); cv.width = w; cv.height = h; const ctx = cv.getContext("2d"); if (ctx) ctx.drawImage(img, 0, 0, w, h); setBlogo(cv.toDataURL("image/png")); }; img.src = reader.result as string; }; reader.readAsDataURL(file); };
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -575,12 +583,12 @@ function Console({ orgs, orgId, setOrgId, refreshOrgs }: { orgs: OrgRow[]; orgId
     const id = await createOrg(name.trim());
     if (!id) { setMsg("יצירה נכשלה — נדרשת הרשאת מנהל-על"); setBusy(false); return; }
     const st = emptyState(num(opening), num(warn), num(crit));
-    st.brand = { name: bname, color: bcolor };
+    st.brand = { name: bname, color: bcolor, logo: blogo || undefined };
     await seedOrgState(id, st);
     await refreshOrgs();
     setOrgId(id);
     setMsg("הלקוח \"" + name.trim() + "\" נוצר ונבחר כפעיל ✓");
-    setName("");
+    setName(""); setBlogo("");
     setBusy(false);
   };
 
@@ -609,6 +617,7 @@ function Console({ orgs, orgId, setOrgId, refreshOrgs }: { orgs: OrgRow[]; orgId
           <div><label style={lbl}>שם הלקוח</label><input value={name} onChange={(e) => setName(e.target.value)} style={inp} placeholder="שם מלון / רשת" /></div>
           <div><label style={lbl}>שם מערכת (מיתוג)</label><input value={bname} onChange={(e) => setBname(e.target.value)} style={inp} /></div>
           <div><label style={lbl}>צבע ראשי</label><input type="color" value={bcolor} onChange={(e) => setBcolor(e.target.value)} style={{ ...inp, height: 38, padding: 4 }} /></div>
+          <div><label style={lbl}>לוגו הלקוח (אופציונלי)</label><input type="file" accept="image/*" onChange={onLogoPick} style={{ ...inp, padding: 6 }} />{blogo && <img src={blogo} alt="" style={{ height: 34, marginTop: 6, display: "block" }} />}</div>
           <div><label style={lbl}>יתרת פתיחה</label><input type="number" value={opening} onChange={(e) => setOpening(e.target.value)} style={inp} /></div>
           <div><label style={lbl}>סף אזהרה</label><input type="number" value={warn} onChange={(e) => setWarn(e.target.value)} style={inp} /></div>
           <div><label style={lbl}>סף קריטי</label><input type="number" value={crit} onChange={(e) => setCrit(e.target.value)} style={inp} /></div>
