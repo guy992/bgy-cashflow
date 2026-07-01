@@ -101,17 +101,16 @@ export async function addMembership(orgId: string, userId: string, role: string)
 }
 
 export async function listMembers(orgId: string): Promise<{ user_id: string; role: string; email: string }[]> {
-  const { data, error } = await supabase
-    .from("memberships")
-    .select("user_id, role, profiles(email)")
-    .eq("org_id", orgId);
-  if (error) { console.error("listMembers", error.message); reportError(error, "listMembers"); return []; }
-  return (data || []).map((m: { user_id: string; role: string; profiles: { email: string } | { email: string }[] | null }) => {
-    const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
-    return { user_id: m.user_id, role: m.role, email: p ? p.email : "—" };
-  });
+  const { data: mems, error } = await supabase.from("memberships").select("user_id, role").eq("org_id", orgId);
+  if (error) { reportError(error, "listMembers"); return []; }
+  const rows = mems || [];
+  const ids = rows.map((m: any) => m.user_id);
+  if (!ids.length) return [];
+  const { data: profs } = await supabase.from("profiles").select("id, email").in("id", ids);
+  const emap: Record<string, string> = {};
+  (profs || []).forEach((p: any) => { emap[p.id] = p.email; });
+  return rows.map((m: any) => ({ user_id: m.user_id, role: m.role, email: emap[m.user_id] || "" }));
 }
-
 export async function loadRemote(orgId: string): Promise<unknown | null> {
   const { data, error } = await supabase.from("app_state").select("data").eq("org_id", orgId).maybeSingle();
   if (error) { console.error("loadRemote", error.message); reportError(error, "loadRemote"); return null; }
