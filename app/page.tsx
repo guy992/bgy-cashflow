@@ -11,6 +11,7 @@ import {
   addMembership, listMembers, type OrgRow,
 } from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
+import { BalanceLine, MonthlyBars, Legend } from "@/lib/charts";
 
 const ILS = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
 const num = (v: string) => { const n = Number(v); return isNaN(n) ? 0 : n; };
@@ -142,7 +143,7 @@ export default function App() {
             {tab === "entry" && <Entry state={state} setState={setState} />}
             {tab === "recurring" && <Recurring state={state} setState={setState} />}
             {tab === "rolling" && <Rolling state={state} />}
-            {tab === "aging" && <Aging state={state} />}
+            {tab === "aging" && <Aging state={state} setState={setState} />}
             {tab === "scenarios" && <Scenarios state={state} />}
             {tab === "settings" && <Settings state={state} setState={setState} />}
           </>
@@ -213,6 +214,9 @@ function Dashboard({ state }: { state: CashState }) {
   const [ym, setYm] = useState(state.months[0]);
   const chain = useMemo(() => computeChain(state), [state]);
   const m = chain[ym] || chain[state.months[0]];
+  const barRows = useMemo(() => state.months.map((mm) => ({ label: mm.slice(5), rec: (chain[mm] ? chain[mm].monRec : 0), pay: (chain[mm] ? chain[mm].monPay : 0) })), [chain, state.months]);
+  if (!state.months.length || !m) return <div style={{ ...card, textAlign: "center", color: C.sub }}>אין חודשים מוגדרים. הוסף חודשים במסך ההגדרות כדי לראות את הדשבורד.</div>;
+  const linePts = m.days.map((d) => ({ label: d.date.slice(8), value: d.proj }));
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -232,6 +236,16 @@ function Dashboard({ state }: { state: CashState }) {
           {m.alert === "crit" ? "קריטי" : "אזהרה"} — שפל צפוי {ILS(m.trough)} · שלמות הזנה {m.completeness}%
         </div>
       )}
+      <div style={{ ...card, marginTop: 16 }}>
+        <h3 style={{ marginTop: 0, fontSize: 14 }}>מסלול יתרה יומי · {ym}</h3>
+        <BalanceLine points={linePts} warn={state.warn} crit={state.crit} />
+        <Legend items={[{ c: "#1d4ed8", t: "יתרה צפויה" }, { c: "#d97706", t: "סף אזהרה" }, { c: "#dc2626", t: "סף קריטי" }]} />
+      </div>
+      <div style={{ ...card, marginTop: 16 }}>
+        <h3 style={{ marginTop: 0, fontSize: 14 }}>תקבולים מול תשלומים · לפי חודש</h3>
+        <MonthlyBars rows={barRows} />
+        <Legend items={[{ c: "#059669", t: "תקבולים" }, { c: "#dc2626", t: "תשלומים" }]} />
+      </div>
       <div style={{ ...card, marginTop: 16 }}>
         <h3 style={{ marginTop: 0, fontSize: 14 }}>מסלול יומי</h3>
         <div style={{ maxHeight: 360, overflow: "auto" }}>
@@ -298,12 +312,30 @@ function Entry({ state, setState }: { state: CashState; setState: (s: CashState)
 
 function Recurring({ state, setState }: { state: CashState; setState: (s: CashState) => void }) {
   const toggle = (id: RecurringRule["id"]) => setState({ ...state, recurring: state.recurring.map((r) => r.id === id ? { ...r, active: !r.active } : r) });
+  const del = (id: RecurringRule["id"]) => setState({ ...state, recurring: state.recurring.filter((r) => r.id !== id) });
+  const [f, setF] = useState({ day: "1", site: state.sites[0], dir: "תשלום", category: "", amount: "", status: "אומדן" });
+  const add = () => {
+    const amt = Math.abs(Number(f.amount) || 0);
+    if (!amt) return;
+    const r: RecurringRule = { id: "r" + Date.now(), day: Math.min(31, Math.max(1, Number(f.day) || 1)), site: f.site, dir: f.dir as RecurringRule["dir"], category: f.category || "אחר", amount: amt, status: f.status as RecurringRule["status"], active: true };
+    setState({ ...state, recurring: [...state.recurring, r] });
+    setF({ ...f, category: "", amount: "" });
+  };
+  const inp = inpBase;
   return (
     <>
       <h2 style={{ marginTop: 0, fontSize: 18 }}>הוראות קבע</h2>
+      <div style={{ ...card, display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end", marginBottom: 16 }}>
+        <input type="number" placeholder="יום בחודש" value={f.day} onChange={(e) => setF({ ...f, day: e.target.value })} style={inp} />
+        <select value={f.site} onChange={(e) => setF({ ...f, site: e.target.value })} style={inp}>{state.sites.map((s) => <option key={s}>{s}</option>)}</select>
+        <select value={f.dir} onChange={(e) => setF({ ...f, dir: e.target.value })} style={inp}><option>תשלום</option><option>תקבול</option></select>
+        <input placeholder="קטגוריה" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} style={inp} />
+        <input type="number" placeholder="סכום" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} />
+        <button onClick={add} style={{ ...inp, background: C.accent, color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>הוסף הו״ק</button>
+      </div>
       <div style={card}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><th style={th}>יום</th><th style={th}>אתר</th><th style={th}>כיוון</th><th style={th}>קטגוריה</th><th style={th}>סכום</th><th style={th}>סטטוס</th><th style={th}>פעיל</th></tr></thead>
+          <thead><tr><th style={th}>יום</th><th style={th}>אתר</th><th style={th}>כיוון</th><th style={th}>קטגוריה</th><th style={th}>סכום</th><th style={th}>סטטוס</th><th style={th}>פעיל</th><th style={th}></th></tr></thead>
           <tbody>
             {state.recurring.map((r) => (
               <tr key={r.id} style={{ opacity: r.active ? 1 : 0.4 }}>
@@ -311,6 +343,7 @@ function Recurring({ state, setState }: { state: CashState; setState: (s: CashSt
                 <td style={{ ...td, color: r.dir === "תקבול" ? C.good : C.bad }}>{r.dir}</td>
                 <td style={td}>{r.category}</td><td style={td}>{ILS(r.amount)}</td><td style={td}>{r.status}</td>
                 <td style={td}><input type="checkbox" checked={r.active} onChange={() => toggle(r.id)} /></td>
+                <td style={td}><button onClick={() => del(r.id)} style={{ color: C.bad, background: "none", border: "none", cursor: "pointer" }}>מחק</button></td>
               </tr>
             ))}
           </tbody>
@@ -351,11 +384,27 @@ function Rolling({ state }: { state: CashState }) {
   );
 }
 
-function Aging({ state }: { state: CashState }) {
+function Aging({ state, setState }: { state: CashState; setState: (s: CashState) => void }) {
   const a = useMemo(() => aging(state), [state]);
+  const [f, setF] = useState({ date: state.months[0] ? state.months[0] + "-15" : "", site: state.sites[0], category: "גביית חייבים", amount: "", status: "אומדן" });
+  const add = () => {
+    const amt = Math.abs(Number(f.amount) || 0);
+    if (!amt || !f.date) return;
+    const t: Txn = { id: Date.now(), by: "ידני", date: f.date, site: f.site, dir: "תקבול", category: f.category || "חייבים", amount: amt, status: f.status as Txn["status"] };
+    setState({ ...state, transactions: [...state.transactions, t] });
+    setF({ ...f, amount: "" });
+  };
+  const inp = inpBase;
   return (
     <>
       <h2 style={{ marginTop: 0, fontSize: 18 }}>גבייה / חייבים</h2>
+      <div style={{ ...card, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, alignItems: "end", marginBottom: 16 }}>
+        <input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} style={inp} />
+        <select value={f.site} onChange={(e) => setF({ ...f, site: e.target.value })} style={inp}>{state.sites.map((s) => <option key={s}>{s}</option>)}</select>
+        <input placeholder="קטגוריה" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} style={inp} />
+        <input type="number" placeholder="סכום חייב" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} />
+        <button onClick={add} style={{ ...inp, background: C.accent, color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>הוסף חייב</button>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12, marginBottom: 16 }}>
         <Kpi label="סך חייבים (ברוטו)" value={ILS(a.totalGross)} />
         <Kpi label="גבייה צפויה (משוקלל)" value={ILS(a.totalExpected)} color={C.good} />
@@ -385,6 +434,7 @@ function Scenarios({ state }: { state: CashState }) {
     return runScenario(state, delta)[ym];
   }, [state, ym, amount, dir]);
   const inp = inpBase;
+  if (!state.months.length || !base || !scen) return <div style={{ ...card, textAlign: "center", color: C.sub }}>הוסף חודשים ותנועות כדי להשתמש בתרחישים.</div>;
   return (
     <>
       <h2 style={{ marginTop: 0, fontSize: 18 }}>תרחישים · מה-אם</h2>
