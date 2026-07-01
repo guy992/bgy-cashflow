@@ -68,6 +68,8 @@ export default function App() {
   const [state, setState] = useState<CashState>(demoState);
   const [tab, setTab] = useState("dash");
   const [loaded, setLoaded] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   const isDemo = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "1";
 
   useEffect(() => {
@@ -118,6 +120,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [state, loaded, session, orgId]);
 
+  if (!mounted) return <div dir="rtl" style={{ padding: 60, textAlign: "center", color: C.sub }}>טוען…</div>;
   if (!isDemo && !authReady) return <div dir="rtl" style={{ padding: 60, textAlign: "center", color: C.sub }}>טוען…</div>;
   if (!isDemo && !session) return <Login />;
 
