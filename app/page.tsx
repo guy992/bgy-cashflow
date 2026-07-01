@@ -64,12 +64,21 @@ export default function App() {
   const [state, setState] = useState<CashState>(demoState);
   const [tab, setTab] = useState("dash");
   const [loaded, setLoaded] = useState(false);
+  const isDemo = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "1";
 
   useEffect(() => {
     getSession().then((s) => { setSession(s); setAuthReady(true); });
     const { data: sub } = onAuthChange((s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!isDemo) return;
+    setState(demoState());
+    setOrgs([{ id: "demo", name: "מלון הדגמה" }]);
+    setOrgId("demo");
+    setLoaded(true);
+  }, [isDemo]);
 
   const refreshOrgs = async () => {
     const sup = await isSuperAdmin();
@@ -81,11 +90,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (isDemo) return;
     if (!session) { setOrgs([]); setOrgId(""); setIsSuper(false); setLoaded(false); return; }
     refreshOrgs();
   }, [session]);
 
   useEffect(() => {
+    if (isDemo) return;
     if (!session || !orgId) { setLoaded(false); return; }
     (async () => {
       try {
@@ -98,13 +109,13 @@ export default function App() {
   }, [session, orgId]);
 
   useEffect(() => {
-    if (!loaded || !session || !orgId) return;
+    if (isDemo || !loaded || !session || !orgId) return;
     const t = setTimeout(() => { saveRemote(orgId, state); }, 800);
     return () => clearTimeout(t);
   }, [state, loaded, session, orgId]);
 
-  if (!authReady) return <div dir="rtl" style={{ padding: 60, textAlign: "center", color: C.sub }}>טוען…</div>;
-  if (!session) return <Login />;
+  if (!isDemo && !authReady) return <div dir="rtl" style={{ padding: 60, textAlign: "center", color: C.sub }}>טוען…</div>;
+  if (!isDemo && !session) return <Login />;
 
   const tabs = isSuper ? [...BASE_TABS, { id: "console", label: "קונסולת BGY" }] : BASE_TABS;
   const activeOrg = orgs.find((o) => o.id === orgId);
@@ -116,7 +127,7 @@ export default function App() {
       <header style={{ background: state.brand?.color || C.navy, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>{state.brand?.name || "מערכת ניהול תזרים מזומנים"}</div>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · {session.user.email}{isSuper ? " · מנהל-על" : ""}</div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>BGY Consulting · {isDemo ? "מצב הדגמה" : session?.user.email}{isSuper ? " · מנהל-על" : ""}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {orgs.length > 0 && (
@@ -124,9 +135,14 @@ export default function App() {
               {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
           )}
-          <button onClick={() => signOut()} style={{ background: "transparent", color: "#cbd5e1", border: "1px solid #334155", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>התנתק</button>
+          <button onClick={() => { if (isDemo) { window.location.href = "/"; } else { signOut(); } }} style={{ background: "transparent", color: "#cbd5e1", border: "1px solid #334155", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>{isDemo ? "יציאה מהדגמה" : "התנתק"}</button>
         </div>
       </header>
+      {isDemo && (
+        <div style={{ background: "#fef9c3", color: "#854d0e", textAlign: "center", padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>
+          🔎 מצב הדגמה — הנתונים לדוגמה בלבד ואינם נשמרים. <a href="/" style={{ color: "#1d4ed8" }}>למערכת המלאה / התחברות</a>
+        </div>
+      )}
       <nav style={{ display: "flex", gap: 4, padding: "12px 24px 0", flexWrap: "wrap", borderBottom: "1px solid " + C.line, background: "#fff" }}>
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "8px 14px", border: "none", borderBottom: tab === t.id ? "2px solid " + C.accent : "2px solid transparent", background: "transparent", color: tab === t.id ? C.accent : C.sub, fontWeight: tab === t.id ? 700 : 500, cursor: "pointer", fontSize: 14 }}>{t.label}</button>
@@ -198,7 +214,10 @@ function Login() {
             {mode === "in" ? "הרשמה" : "התחברות"}
           </button>
         </div>
-        <div style={{ marginTop: 12, textAlign: "center", fontSize: 11, color: C.sub }}>
+        <div style={{ marginTop: 12, textAlign: "center" }}>
+          <a href="/?demo=1" style={{ color: C.accent, fontSize: 13, fontWeight: 600, textDecoration: "none" }}>צפה בהדגמה ללא התחברות ›</a>
+        </div>
+        <div style={{ marginTop: 10, textAlign: "center", fontSize: 11, color: C.sub }}>
           <LegalLinks />
         </div>
       </div>
