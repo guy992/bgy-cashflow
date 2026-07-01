@@ -49,6 +49,10 @@ export interface CashState {
   months: string[];
   agingRules?: AgingRules;
   brand?: { name?: string; color?: string; logo?: string };
+  bizType?: "hotel" | "chain" | "business";
+  siteTermPlural?: string;
+  accounts?: BankAccount[];
+  siteAccounts?: Record<string, string>;
 }
 
 export interface DayRow {
@@ -250,3 +254,11 @@ export function aging(state: CashState): { buckets: AgingBucket[]; totalGross: n
   const totalExpected = buckets.reduce((s, b) => s + b.expected, 0);
   return { buckets, totalGross, totalExpected };
 }
+
+export interface BankAccount { id: string; name: string; bank?: string; branch?: string; number?: string; opening: number; warn?: number; crit?: number; }
+export function hasBanks(s: CashState): boolean { return !!(s.accounts && s.accounts.length > 0); }
+export function sitesForAccount(s: CashState, accId: string): string[] { const m = s.siteAccounts || {}; return (s.sites || []).filter((x) => (m[x] || "") === accId); }
+export function scopeAccount(s: CashState, accId: string): CashState { const acc = (s.accounts || []).find((a) => a.id === accId); if (!acc) return s; const sites = sitesForAccount(s, accId); const inSet = (site: string) => sites.indexOf(site) >= 0; return { ...s, opening: acc.opening, warn: acc.warn == null ? s.warn : acc.warn, crit: acc.crit == null ? s.crit : acc.crit, sites, transactions: (s.transactions || []).filter((t) => inSet(t.site)), recurring: (s.recurring || []).filter((r) => inSet(r.site)) }; }
+export function scopeConsolidated(s: CashState): CashState { if (!hasBanks(s)) return s; const accs = s.accounts || []; const opening = accs.reduce((x, a) => x + (a.opening || 0), 0); const warn = accs.reduce((x, a) => x + (a.warn || 0), 0); const crit = accs.reduce((x, a) => x + (a.crit || 0), 0); return { ...s, opening, warn, crit }; }
+export function siteTerm(s: CashState): string { if (s.siteTermPlural) return s.siteTermPlural; return s.bizType === "chain" ? "מלונות" : s.bizType === "business" ? "יחידות" : "מחלקות"; }
+export function siteTermOne(s: CashState): string { return s.bizType === "chain" ? "מלון" : s.bizType === "business" ? "יחידה" : "מחלקה"; }
