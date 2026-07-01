@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
-  computeChain, runScenario, rollingForecast, aging, emptyState,
-  type CashState, type Txn, type RecurringRule,
+  computeChain, runScenario, rollingForecast, aging, emptyState, hasBanks, scopeAccount, scopeConsolidated, siteTerm, siteTermOne,
+  type CashState, type Txn, type RecurringRule, type BankAccount,
 } from "@/lib/engine";
 import {
   loadRemote, saveRemote, signIn, signUp, signInWithGoogle, signOut, getSession, onAuthChange,
@@ -33,6 +33,9 @@ function demoState(): CashState {
     { id: 3, by: "מערכת", date: "2026-06-20", site: "קאנטרי קלאב", dir: "תקבול", category: "מנויים", amount: 130000, status: "אומדן" },
   ];
   s.brand = { name: "מערכת ניהול תזרים מזומנים", color: "#0f172a" };
+  s.bizType = "chain";
+  s.accounts = [{ id: "b1", name: "עו״ש ראשי — הפועלים", bank: "בנק הפועלים", branch: "612", number: "45231", opening: 600000, warn: 150000, crit: 0 }, { id: "b2", name: "עו״ש משני — לאומי", bank: "בנק לאומי", branch: "800", number: "11902", opening: 276286, warn: 50000, crit: 0 }];
+  s.siteAccounts = { "מאוחד": "b1", "חוף התמרים": "b1", "נווה תמר": "b2", "קאנטרי קלאב": "b2" };
   return s;
 }
 
@@ -244,15 +247,23 @@ function Kpi({ label, value, color }: { label: string; value: string; color?: st
 
 function Dashboard({ state }: { state: CashState }) {
   const [ym, setYm] = useState(state.months[0]);
-  const chain = useMemo(() => computeChain(state), [state]);
-  const m = chain[ym] || chain[state.months[0]];
-  const barRows = useMemo(() => state.months.map((mm) => ({ label: mm.slice(5), rec: (chain[mm] ? chain[mm].monRec : 0), pay: (chain[mm] ? chain[mm].monPay : 0) })), [chain, state.months]);
+  const [acc, setAcc] = useState("__all__");
+  const view = useMemo(() => !hasBanks(state) ? state : (acc === "__all__" ? scopeConsolidated(state) : scopeAccount(state, acc)), [state, acc]);
+  const chain = useMemo(() => computeChain(view), [view]);
+  const m = chain[ym] || chain[view.months[0]];
+  const barRows = useMemo(() => view.months.map((mm) => ({ label: mm.slice(5), rec: (chain[mm] ? chain[mm].monRec : 0), pay: (chain[mm] ? chain[mm].monPay : 0) })), [chain, view.months]);
   if (!state.months.length || !m) return <div style={{ ...card, textAlign: "center", color: C.sub }}>אין חודשים מוגדרים. הוסף חודשים במסך ההגדרות כדי לראות את הדשבורד.</div>;
   const linePts = m.days.map((d) => ({ label: d.date.slice(8), value: d.proj }));
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 18 }}>דשבורד · {ym}</h2>
+        {hasBanks(state) && (
+          <select value={acc} onChange={(e) => setAcc(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #cbd5e1", marginInlineStart: 8 }}>
+            <option value="__all__">מאוחד — כל החשבונות</option>
+            {(state.accounts || []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        )}
         <select value={ym} onChange={(e) => setYm(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #cbd5e1" }}>
           {state.months.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
         </select>
@@ -260,7 +271,7 @@ function Dashboard({ state }: { state: CashState }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
         <Kpi label="יתרת פתיחה" value={ILS(m.opening)} />
         <Kpi label="יתרת סגירה צפויה" value={ILS(m.close)} color={m.close < 0 ? C.bad : C.good} />
-        <Kpi label="שפל נזילות" value={ILS(m.trough)} color={m.trough < state.crit ? C.bad : m.trough < state.warn ? C.warn : C.good} />
+        <Kpi label="שפל נזילות" value={ILS(m.trough)} color={m.trough < view.crit ? C.bad : m.trough < view.warn ? C.warn : C.good} />
         <Kpi label="ימי אוברדרפט" value={String(m.od)} color={m.od > 0 ? C.bad : C.good} />
       </div>
       {m.alert !== "ok" && (
@@ -270,7 +281,7 @@ function Dashboard({ state }: { state: CashState }) {
       )}
       <div style={{ ...card, marginTop: 16 }}>
         <h3 style={{ marginTop: 0, fontSize: 14 }}>מסלול יתרה יומי · {ym}</h3>
-        <BalanceLine points={linePts} warn={state.warn} crit={state.crit} />
+        <BalanceLine points={linePts} warn={view.warn} crit={view.crit} />
         <Legend items={[{ c: "#1d4ed8", t: "יתרה צפויה" }, { c: "#d97706", t: "סף אזהרה" }, { c: "#dc2626", t: "סף קריטי" }]} />
       </div>
       <div style={{ ...card, marginTop: 16 }}>
@@ -325,7 +336,7 @@ function Entry({ state, setState }: { state: CashState; setState: (s: CashState)
       </div>
       <div style={{ ...card, marginTop: 16 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><th style={th}>תאריך</th><th style={th}>אתר</th><th style={th}>כיוון</th><th style={th}>קטגוריה</th><th style={th}>סכום</th><th style={th}>סטטוס</th><th style={th}></th></tr></thead>
+          <thead><tr><th style={th}>תאריך</th><th style={th}>{siteTermOne(state)}</th><th style={th}>כיוון</th><th style={th}>קטגוריה</th><th style={th}>סכום</th><th style={th}>סטטוס</th><th style={th}></th></tr></thead>
           <tbody>
             {[...state.transactions].sort((a, b) => (a.date < b.date ? 1 : -1)).map((t) => (
               <tr key={t.id}>
@@ -367,7 +378,7 @@ function Recurring({ state, setState }: { state: CashState; setState: (s: CashSt
       </div>
       <div style={card}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><th style={th}>יום</th><th style={th}>אתר</th><th style={th}>כיוון</th><th style={th}>קטגוריה</th><th style={th}>סכום</th><th style={th}>סטטוס</th><th style={th}>פעיל</th><th style={th}></th></tr></thead>
+          <thead><tr><th style={th}>יום</th><th style={th}>{siteTermOne(state)}</th><th style={th}>כיוון</th><th style={th}>קטגוריה</th><th style={th}>סכום</th><th style={th}>סטטוס</th><th style={th}>פעיל</th><th style={th}></th></tr></thead>
           <tbody>
             {state.recurring.map((r) => (
               <tr key={r.id} style={{ opacity: r.active ? 1 : 0.4 }}>
@@ -386,7 +397,8 @@ function Recurring({ state, setState }: { state: CashState; setState: (s: CashSt
 }
 
 function Rolling({ state }: { state: CashState }) {
-  const rows = useMemo(() => rollingForecast(state, 13), [state]);
+  const view = useMemo(() => hasBanks(state) ? scopeConsolidated(state) : state, [state]);
+  const rows = useMemo(() => rollingForecast(view, 13), [view]);
   const trough = Math.min(...rows.map((r) => r.close));
   return (
     <>
@@ -459,11 +471,12 @@ function Scenarios({ state }: { state: CashState }) {
   const [ym, setYm] = useState(state.months[state.months.length - 1]);
   const [amount, setAmount] = useState("500000");
   const [dir, setDir] = useState("תקבול");
-  const base = useMemo(() => computeChain(state)[ym], [state, ym]);
+  const view = useMemo(() => hasBanks(state) ? scopeConsolidated(state) : state, [state]);
+  const base = useMemo(() => computeChain(view)[ym], [view, ym]);
   const scen = useMemo(() => {
     const amt = Math.abs(Number(amount) || 0);
     const delta: Txn[] = amt ? [{ id: "sc", date: ym + "-15", site: "מאוחד", dir: dir as Txn["dir"], category: "תרחיש", amount: amt, status: "אומדן" }] : [];
-    return runScenario(state, delta)[ym];
+    return runScenario(view, delta)[ym];
   }, [state, ym, amount, dir]);
   const inp = inpBase;
   if (!state.months.length || !base || !scen) return <div style={{ ...card, textAlign: "center", color: C.sub }}>הוסף חודשים ותנועות כדי להשתמש בתרחישים.</div>;
@@ -521,6 +534,59 @@ function ListEdit({ label, items, onChange }: { label: string; items: string[]; 
   );
 }
 
+function BizBankSettings({ state, setState }: { state: CashState; setState: (s: CashState) => void }) {
+  const bankList = ["בנק הפועלים", "בנק לאומי", "בנק דיסקונט", "מזרחי טפחות", "הבינלאומי", "בנק מרכנתיל", "אוצר החייל", "בנק יהב", "בנק ירושלים", "וואן זירו", "אחר"];
+  const accts = state.accounts || [];
+  const enabled = accts.length > 0;
+  const setAccts = (a: BankAccount[]) => setState({ ...state, accounts: a });
+  const addAcct = () => setAccts([...accts, { id: "b" + Date.now(), name: "חשבון " + (accts.length + 1), bank: bankList[0], branch: "", number: "", opening: 0, warn: 0, crit: 0 }]);
+  const updAcct = (id: string, patch: Partial<BankAccount>) => setAccts(accts.map((a) => a.id === id ? { ...a, ...patch } : a));
+  const delAcct = (id: string) => { if (!confirm("למחוק את חשבון הבנק? פעולה זו אינה הפיכה.")) return; const m: Record<string, string> = { ...(state.siteAccounts || {}) }; Object.keys(m).forEach((k) => { if (m[k] === id) delete m[k]; }); setState({ ...state, accounts: accts.filter((a) => a.id !== id), siteAccounts: m }); };
+  const mapSite = (site: string, accId: string) => setState({ ...state, siteAccounts: { ...(state.siteAccounts || {}), [site]: accId } });
+  const n2 = (v: string) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+  const inp: CSSProperties = { ...inpBase, width: "100%" };
+  const lbl: CSSProperties = { fontSize: 12, color: C.sub, marginBottom: 4, display: "block" };
+  return (
+    <>
+      <div style={{ ...card, marginTop: 12 }}>
+        <div style={{ fontWeight: 600, marginBottom: 10 }}>סוג העסק</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+          <div><label style={lbl}>סוג</label><select value={state.bizType || "hotel"} onChange={(e) => setState({ ...state, bizType: e.target.value as CashState["bizType"] })} style={inp}><option value="hotel">מלון בודד</option><option value="chain">רשת בתי מלון</option><option value="business">עסק אחר</option></select></div>
+          <div><label style={lbl}>כינוי ליחידות (ברירת מחדל: {siteTerm(state)})</label><input value={state.siteTermPlural || ""} onChange={(e) => setState({ ...state, siteTermPlural: e.target.value })} style={inp} placeholder={siteTerm(state)} /></div>
+        </div>
+      </div>
+      <div style={{ ...card, marginTop: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><div style={{ fontWeight: 600 }}>חשבונות בנק</div><button onClick={addAcct} style={{ ...inpBase, background: C.accent, color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>+ הוסף חשבון</button></div>
+        {!enabled && <div style={{ fontSize: 13, color: C.sub }}>אין חשבונות בנק מוגדרים — המערכת פועלת בחשבון יחיד (לפי הפרמטרים הפיננסיים למטה). הוסף חשבון כדי לנהל תזרים רב-בנקאי לכל חשבון בנפרד ומאוחד.</div>}
+        {enabled && accts.map((a) => (
+          <div key={a.id} style={{ border: "1px solid " + C.line, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              <div><label style={lbl}>כינוי חשבון</label><input value={a.name} onChange={(e) => updAcct(a.id, { name: e.target.value })} style={inp} /></div>
+              <div><label style={lbl}>בנק</label><select value={a.bank || ""} onChange={(e) => updAcct(a.id, { bank: e.target.value })} style={inp}>{bankList.map((b) => <option key={b}>{b}</option>)}</select></div>
+              <div><label style={lbl}>סניף</label><input value={a.branch || ""} onChange={(e) => updAcct(a.id, { branch: e.target.value })} style={inp} /></div>
+              <div><label style={lbl}>מספר חשבון</label><input value={a.number || ""} onChange={(e) => updAcct(a.id, { number: e.target.value })} style={inp} /></div>
+              <div><label style={lbl}>יתרת פתיחה</label><input type="number" value={a.opening} onChange={(e) => updAcct(a.id, { opening: n2(e.target.value) })} style={inp} /></div>
+              <div style={{ display: "flex", gap: 6 }}><div style={{ flex: 1 }}><label style={lbl}>סף אזהרה</label><input type="number" value={a.warn || 0} onChange={(e) => updAcct(a.id, { warn: n2(e.target.value) })} style={inp} /></div><div style={{ flex: 1 }}><label style={lbl}>סף קריטי</label><input type="number" value={a.crit || 0} onChange={(e) => updAcct(a.id, { crit: n2(e.target.value) })} style={inp} /></div></div>
+            </div>
+            <button onClick={() => delAcct(a.id)} style={{ marginTop: 8, background: "none", border: "none", color: C.bad, cursor: "pointer", fontSize: 13 }}>מחק חשבון</button>
+          </div>
+        ))}
+      </div>
+      {enabled && (
+        <div style={{ ...card, marginTop: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 10 }}>שיוך {siteTerm(state)} לחשבונות בנק</div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={th}>{siteTerm(state)}</th><th style={th}>חשבון בנק</th></tr></thead><tbody>
+            {(state.sites || []).map((site) => (
+              <tr key={site}><td style={td}>{site}</td><td style={td}><select value={(state.siteAccounts || {})[site] || ""} onChange={(e) => mapSite(site, e.target.value)} style={inpBase}><option value="">— ללא שיוך —</option>{accts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></td></tr>
+            ))}
+          </tbody></table>
+          <div style={{ fontSize: 12, color: C.sub, marginTop: 8 }}>יחידות ללא שיוך יופיעו רק בתצוגה המאוחדת.</div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Settings({ state, setState }: { state: CashState; setState: (s: CashState) => void }) {
   const brand = state.brand || {};
   const inp: CSSProperties = { ...inpBase, width: "100%" };
@@ -541,6 +607,7 @@ function Settings({ state, setState }: { state: CashState; setState: (s: CashSta
           </div>
         </div>
       </div>
+      <BizBankSettings state={state} setState={setState} />
       <div style={{ ...card, marginTop: 12 }}>
         <div style={{ fontWeight: 600, marginBottom: 10 }}>פרמטרים פיננסיים</div>
         <div style={{ fontSize: 12, color: C.warn, marginBottom: 10 }}>⚠️ שינוי פרמטרים אלה משפיע על כל התחזיות והתראות הנזילות, ונשמר אוטומטית.</div>
@@ -550,7 +617,7 @@ function Settings({ state, setState }: { state: CashState; setState: (s: CashSta
           <div><label style={lbl}>סף קריטי</label><input type="number" value={state.crit} onChange={(e) => setState({ ...state, crit: num(e.target.value) })} style={inp} /></div>
         </div>
       </div>
-      <ListEdit label="אתרים" items={state.sites} onChange={(v) => setState({ ...state, sites: v })} />
+      <ListEdit label={siteTerm(state)} items={state.sites} onChange={(v) => setState({ ...state, sites: v })} />
       <ListEdit label="חודשים (YYYY-MM)" items={state.months} onChange={(v) => setState({ ...state, months: v })} />
       <ListEdit label="קטגוריות תקבול" items={state.catRec} onChange={(v) => setState({ ...state, catRec: v })} />
       <ListEdit label="קטגוריות תשלום" items={state.catPay} onChange={(v) => setState({ ...state, catPay: v })} />
