@@ -304,7 +304,7 @@ function Entry({ state, setState }: { state: CashState; setState: (s: CashState)
     setState({ ...state, transactions: [...state.transactions, t] });
     setF({ ...f, category: "", amount: "" });
   };
-  const del = (id: Txn["id"]) => setState({ ...state, transactions: state.transactions.filter((t) => t.id !== id) });
+  const del = (id: Txn["id"]) => { if (!confirm("למחוק את התנועה? פעולה זו אינה הפיכה.")) return; setState({ ...state, transactions: state.transactions.filter((t) => t.id !== id) }); };
   const inp = inpBase;
   return (
     <>
@@ -338,7 +338,7 @@ function Entry({ state, setState }: { state: CashState; setState: (s: CashState)
 
 function Recurring({ state, setState }: { state: CashState; setState: (s: CashState) => void }) {
   const toggle = (id: RecurringRule["id"]) => setState({ ...state, recurring: state.recurring.map((r) => r.id === id ? { ...r, active: !r.active } : r) });
-  const del = (id: RecurringRule["id"]) => setState({ ...state, recurring: state.recurring.filter((r) => r.id !== id) });
+  const del = (id: RecurringRule["id"]) => { if (!confirm("למחוק את הוראת הקבע? פעולה זו אינה הפיכה.")) return; setState({ ...state, recurring: state.recurring.filter((r) => r.id !== id) }); };
   const [f, setF] = useState({ day: "1", site: state.sites[0], dir: "תשלום", category: "", amount: "", status: "אומדן" });
   const add = () => {
     const amt = Math.abs(Number(f.amount) || 0);
@@ -503,7 +503,7 @@ function ListEdit({ label, items, onChange }: { label: string; items: string[]; 
         {items.map((it, i) => (
           <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#f1f5f9", borderRadius: 999, padding: "4px 10px", fontSize: 13 }}>
             {it}
-            <button onClick={() => onChange(items.filter((_, j) => j !== i))} style={{ border: "none", background: "none", color: C.bad, cursor: "pointer", fontSize: 14 }}>×</button>
+            <button onClick={() => { if (confirm("להסיר \"" + it + "\" מהרשימה?")) onChange(items.filter((_, j) => j !== i)); }} style={{ border: "none", background: "none", color: C.bad, cursor: "pointer", fontSize: 14 }}>×</button>
           </span>
         ))}
       </div>
@@ -537,6 +537,7 @@ function Settings({ state, setState }: { state: CashState; setState: (s: CashSta
       </div>
       <div style={{ ...card, marginTop: 12 }}>
         <div style={{ fontWeight: 600, marginBottom: 10 }}>פרמטרים פיננסיים</div>
+        <div style={{ fontSize: 12, color: C.warn, marginBottom: 10 }}>⚠️ שינוי פרמטרים אלה משפיע על כל התחזיות והתראות הנזילות, ונשמר אוטומטית.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
           <div><label style={lbl}>יתרת פתיחה</label><input type="number" value={state.opening} onChange={(e) => setState({ ...state, opening: num(e.target.value) })} style={inp} /></div>
           <div><label style={lbl}>סף אזהרה</label><input type="number" value={state.warn} onChange={(e) => setState({ ...state, warn: num(e.target.value) })} style={inp} /></div>
@@ -586,6 +587,7 @@ function Console({ orgs, orgId, setOrgId, refreshOrgs }: { orgs: OrgRow[]; orgId
   const assign = async () => {
     if (!orgId) { setAmsg("בחר לקוח פעיל קודם"); return; }
     if (!email.trim()) { setAmsg("נא להזין אימייל"); return; }
+    if (!confirm("לשייך את " + email.trim() + " כ" + role + " ללקוח הפעיל?")) return;
     const p = await searchProfileByEmail(email);
     if (!p) { setAmsg("לא נמצא משתמש עם אימייל זה — שיירשם תחילה במסך ההתחברות"); return; }
     const ok = await addMembership(orgId, p.id, role);
