@@ -12,6 +12,7 @@ import {
 } from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
 import { BalanceLine, MonthlyBars, Legend } from "@/lib/charts";
+import { ConsentBanner, AppFooter, HelpGuide, LegalLinks } from "@/lib/help";
 
 const ILS = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
 const num = (v: string) => { const n = Number(v); return isNaN(n) ? 0 : n; };
@@ -51,6 +52,7 @@ const BASE_TABS = [
   { id: "aging", label: "גבייה / חייבים" },
   { id: "scenarios", label: "תרחישים" },
   { id: "settings", label: "הגדרות" },
+  { id: "help", label: "עזרה ומדריך" },
 ];
 
 export default function App() {
@@ -132,12 +134,13 @@ export default function App() {
       </nav>
       <main style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
         {tab === "console" && isSuper && <Console orgs={orgs} orgId={orgId} setOrgId={setOrgId} refreshOrgs={refreshOrgs} />}
-        {tab !== "console" && noOrg && (
+        {tab === "help" && <HelpGuide />}
+        {tab !== "console" && tab !== "help" && noOrg && (
           <div style={{ ...card, textAlign: "center", color: C.sub }}>
-            {isSuper ? "אין עדיין לקוחות. עבור לטאב \"קונסולת BGY\" ליצירת לקוח ראשון." : "החשבון שלך עדיין לא משויך ללקוח. פנה ל-BGY לשיוך."}
+            {isSuper ? "אין עדיין לקוחות. עבור לטאב \"קונסולת BGY\" ליצירת לקוח ראשון." : "החשבון שלך עדיין לא משויך ללקוח. פנה ל-BGY לשיוך. בינתיים אפשר לעיין בטאב \"עזרה ומדריך\"."}
           </div>
         )}
-        {tab !== "console" && showData && (
+        {tab !== "console" && tab !== "help" && showData && (
           <>
             {tab === "dash" && <Dashboard state={state} />}
             {tab === "entry" && <Entry state={state} setState={setState} />}
@@ -149,9 +152,8 @@ export default function App() {
           </>
         )}
       </main>
-      <footer style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: 24 }}>
-        {activeOrg ? "לקוח פעיל: " + activeOrg.name + " · " : ""}נתונים מאובטחים בענן · בידוד מלא לכל לקוח · BGY
-      </footer>
+      <AppFooter activeOrgName={activeOrg?.name} />
+      <ConsentBanner />
     </div>
   );
 }
@@ -196,7 +198,11 @@ function Login() {
             {mode === "in" ? "הרשמה" : "התחברות"}
           </button>
         </div>
+        <div style={{ marginTop: 12, textAlign: "center", fontSize: 11, color: C.sub }}>
+          <LegalLinks />
+        </div>
       </div>
+      <ConsentBanner />
     </div>
   );
 }
