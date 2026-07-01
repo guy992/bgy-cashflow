@@ -10,8 +10,30 @@ const short = (n: number) => {
   return String(Math.round(n));
 };
 
+// עקומה חלקה (Catmull-Rom → Bézier)
+interface Pt { x: number; y: number }
+function smoothPath(pts: Pt[]): string {
+  if (!pts.length) return "";
+  if (pts.length < 3) return pts.map((p, i) => (i === 0 ? "M " : "L ") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+  const t = 0.16;
+  let d = "M " + pts[0].x.toFixed(1) + " " + pts[0].y.toFixed(1);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) * t;
+    const c1y = p1.y + (p2.y - p0.y) * t;
+    const c2x = p2.x - (p3.x - p1.x) * t;
+    const c2y = p2.y - (p3.y - p1.y) * t;
+    d += " C " + c1x.toFixed(1) + " " + c1y.toFixed(1) + " " + c2x.toFixed(1) + " " + c2y.toFixed(1) + " " + p2.x.toFixed(1) + " " + p2.y.toFixed(1);
+  }
+  return d;
+}
+
 export interface LinePoint { label: string; value: number }
 
+// גרף קו — מסלול יתרה יומי עם ספי אזהרה/קריטי
 export function BalanceLine({ points, warn, crit }: { points: LinePoint[]; warn: number; crit: number }) {
   const W = 720, H = 240, padL = 52, padR = 12, padT = 16, padB = 28;
   if (!points.length) return <div style={{ color: "#94a3b8", fontSize: 13, padding: 24, textAlign: "center" }}>אין נתונים להצגה</div>;
@@ -24,7 +46,8 @@ export function BalanceLine({ points, warn, crit }: { points: LinePoint[]; warn:
   const iw = W - padL - padR, ih = H - padT - padB;
   const X = (i: number) => padL + (points.length === 1 ? iw / 2 : (i * iw) / (points.length - 1));
   const Y = (v: number) => padT + ih * (1 - (v - min) / (max - min));
-  const line = points.map((p, i) => (i === 0 ? "M " : "L ") + X(i).toFixed(1) + " " + Y(p.value).toFixed(1)).join(" ");
+  const coords = points.map((p, i) => ({ x: X(i), y: Y(p.value) }));
+  const line = smoothPath(coords);
   const area = line + " L " + X(points.length - 1).toFixed(1) + " " + Y(min).toFixed(1) + " L " + X(0).toFixed(1) + " " + Y(min).toFixed(1) + " Z";
   const grid = [max - gap, (max + min) / 2, min + gap];
   const showThr = (t: number) => t >= min && t <= max;
@@ -60,6 +83,7 @@ export function BalanceLine({ points, warn, crit }: { points: LinePoint[]; warn:
 
 export interface BarRow { label: string; rec: number; pay: number }
 
+// גרף עמודות — תקבולים מול תשלומים לחודש
 export function MonthlyBars({ rows }: { rows: BarRow[] }) {
   const W = 720, H = 240, padL = 52, padR = 12, padT = 16, padB = 28;
   if (!rows.length) return <div style={{ color: "#94a3b8", fontSize: 13, padding: 24, textAlign: "center" }}>אין נתונים להצגה</div>;
