@@ -124,6 +124,7 @@ export default function App() {
 
   return (
     <div dir="rtl" style={{ minHeight: "100vh", background: C.bg, color: C.navy }}>
+      <style>{"@media (max-width:640px){[style*='grid-template-columns']{grid-template-columns:1fr !important}main{padding:14px !important}header{padding:12px 14px !important}table{font-size:11px}nav button{font-size:13px !important;padding:7px 10px !important}}"}</style>
       <header style={{ background: state.brand?.color || C.navy, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>{state.brand?.name || "מערכת ניהול תזרים מזומנים"}</div>
